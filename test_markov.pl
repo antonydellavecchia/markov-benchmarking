@@ -1,6 +1,5 @@
 use application "fulton";
 
-
 sub run_markov {
   # read matrix file in 4ti2 matrix format
   my $matrix_file = $ARGV[0];
@@ -20,9 +19,8 @@ sub run_markov {
   my $lattice = new Matrix<Integer>(@rows);
   my $initial_time = time();
 
-  print markov_basis($lattice);
-
-  print  "polymake took : ", time() - $initial_time, " \n";
+  my $result = markov_basis($lattice);
+  save($result, "${matrix_file}_polymake.json");
 }
 
 run_markov();
