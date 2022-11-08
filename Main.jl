@@ -86,7 +86,7 @@ function benchmark(path)
     ideal_4ti2 = run_markov_4ti2(path)
     o = lex(base_ring(ideal_4ti2))
     
-    if issubset(groebner_basis(ideal_4ti2, ordering=o), gens(ideal_4ti2))
+    if issubset(groebner_basis(ideal_4ti2, ordering=o), ideal_4ti2)
         println("4ti2 correct")
     else
         println("4ti2 incorrect")
@@ -94,9 +94,25 @@ function benchmark(path)
 
     ideal_polymake = run_markov_polymake(path)
     o = lex(base_ring(ideal_polymake))
-    if issubset(groebner_basis(ideal_polymake), gens(ideal_polymake))
+    if issubset(groebner_basis(ideal_polymake), ideal_polymake)
         println("polymake correct")
     else
         println("polymake incorrect")
     end
+end
+
+function is_groebner(I::MPolyIdeal)
+    R = base_ring(I)
+    o = deglex(R)
+    for (f, g) in Hecke.subsets(gens(I), 2)
+        x_gamma = lcm(leading_monomial(f), leading_monomial(g))
+        s_poly = divexact(x_gamma * f, leading_term(f)) -
+            divexact(x_gamma * g, leading_term(g))
+
+        if 0 != normal_form(s_poly, I, o)
+            return false
+        end
+    end
+
+    return true
 end
