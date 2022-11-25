@@ -1,34 +1,11 @@
+using Oscar: replace_TeX
+using Base: reduced_indices
 using Oscar
 include("LocalVariables.jl")
 
-function run_markov_4ti2(path)
-    in = Pipe()
-    out = Pipe()
-    err = Pipe()
-    Base.link_pipe!(in, writer_supports_async=true)
-    Base.link_pipe!(out, reader_supports_async=true)
-    Base.link_pipe!(err, reader_supports_async=true)
-
-    cmd = Oscar.lib4ti2_jll.markov
-    proc = run(pipeline(`$(cmd) $(path) --generation project-and-lift --minimal 'no'`, stdin=in, stdout=out, stderr=err), wait=false)
-
-    task = @async begin
-        write(in, "")
-        close(in)
-    end
-
-    close(in.out)
-    close(out.in)
-    close(err.in)
-
-    wait(task)
-    if !success(proc)
-        error = eof(err) ? "unknown error" : readchomp(err)
-        throw("Failed to run markov: $error")
-    end
-
+function read_4ti2_matrix_file(path)
     result = []
-    open("$(path).mar") do file
+    open("$path") do file
         matrix_string = "["
         for (i, line) in enumerate(eachline(file))
             if i == 1
@@ -46,6 +23,48 @@ function run_markov_4ti2(path)
 
         result = fmpz_mat(eval(Meta.parse(matrix_string)))
     end
+
+    return result
+end
+
+"""
+Find all lattices bases subsets of a markov basis from a file in 4ti2 format
+"""
+function get_bases_from(path)
+    markov_matrix = read_4ti2_matrix_file(path)
+    markov_matroid = matroid_from_matrix_rows(markov_matrix)
+
+    return bases(markov_matroid)
+end
+
+function run_markov_4ti2(path)
+    in = Pipe()
+    out = Pipe()
+    err = Pipe()
+    Base.link_pipe!(in, writer_supports_async=true)
+    Base.link_pipe!(out, reader_supports_async=true)
+    Base.link_pipe!(err, reader_supports_async=true)
+    println(path)
+    cmd = Oscar.lib4ti2_jll.markov
+    proc = run(pipeline(`$(cmd) $(path)
+ --generation project-and-lift --minimal 'no' -parb`, stdin=in, stdout=out, stderr=err), wait=false)
+
+    task = @async begin
+        write(in, "")
+        close(in)
+    end
+
+    close(in.out)
+    close(out.in)
+    close(err.in)
+
+    wait(task)
+    if !success(proc)
+        error = eof(err) ? "unknown error" : readchomp(err)
+        throw("Failed to run markov: $error")
+    end
+
+    result = read_4ti2_matrix_file("$(path).mar")
     return binomial_exponents_to_ideal(result)
 end
 
@@ -57,6 +76,7 @@ function run_markov_polymake(path)
     Base.link_pipe!(out, reader_supports_async=true)
     Base.link_pipe!(err, reader_supports_async=true)
     cmd = `$(polymake_cmd) --script $(pwd())/test_markov.pl $path`
+    println(cmd)
     proc = run(pipeline(cmd, stdin=in, stdout=out, stderr=err), wait=false)
 
     task = @async begin
@@ -79,22 +99,21 @@ function run_markov_polymake(path)
     end
 
     result = fmpz_mat(Matrix{Int64}(load("$(path)_polymake.json")))
+
     return binomial_exponents_to_ideal(result)
 end
 
 function benchmark(path)
-    ideal_4ti2 = run_markov_4ti2(path)
-    o = lex(base_ring(ideal_4ti2))
-    
-    if issubset(groebner_basis(ideal_4ti2, ordering=o), ideal_4ti2)
-        println("4ti2 correct")
-    else
-        println("4ti2 incorrect")
-    end
+    #ideal_4ti2 = run_markov_4ti2(path)
+    #
+    #if is_groebner(ideal_4ti2)
+    #    println("4ti2 correct")
+    #else
+    #    println("4ti2 incorrect")
+    #end
 
     ideal_polymake = run_markov_polymake(path)
-    o = lex(base_ring(ideal_polymake))
-    if issubset(groebner_basis(ideal_polymake), ideal_polymake)
+    if is_groebner(ideal_polymake)
         println("polymake correct")
     else
         println("polymake incorrect")
@@ -115,4 +134,12 @@ function is_groebner(I::MPolyIdeal)
     end
 
     return true
+end
+
+function benchmark_folder(folder_path)
+    foreach(readdir(folder_path)) do f
+        if endswith(f, ".mat")
+            benchmark(replace(f, ".mat" => ""))
+        end
+    end
 end
