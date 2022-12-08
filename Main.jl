@@ -1,6 +1,10 @@
 using Oscar: replace_TeX
 using Base: reduced_indices
 using Oscar
+using TimerOutputs
+
+const to = TimerOutput()
+
 include("LocalVariables.jl")
 
 function read_4ti2_matrix_file(path)
@@ -37,6 +41,7 @@ function get_bases_from(path)
     return bases(markov_matroid)
 end
 
+
 function run_markov_4ti2(path)
     in = Pipe()
     out = Pipe()
@@ -46,8 +51,7 @@ function run_markov_4ti2(path)
     Base.link_pipe!(err, reader_supports_async=true)
     println(path)
     cmd = Oscar.lib4ti2_jll.markov
-    proc = run(pipeline(`$(cmd) $(path)
- --generation project-and-lift --minimal 'no' -parb`, stdin=in, stdout=out, stderr=err), wait=false)
+    proc = run(pipeline(`$(cmd) --generation project-and-lift --minimal=no --precision=arb $(path)`, stdin=in, stdout=out, stderr=err), wait=false)
 
     task = @async begin
         write(in, "")
@@ -64,8 +68,7 @@ function run_markov_4ti2(path)
         throw("Failed to run markov: $error")
     end
 
-    result = read_4ti2_matrix_file("$(path).mar")
-    return binomial_exponents_to_ideal(result)
+    return binomial_exponents_to_ideal(read_4ti2_matrix_file("$(path).mar"))
 end
 
 function run_markov_polymake(path)
@@ -75,8 +78,14 @@ function run_markov_polymake(path)
     Base.link_pipe!(in, writer_supports_async=true)
     Base.link_pipe!(out, reader_supports_async=true)
     Base.link_pipe!(err, reader_supports_async=true)
-    cmd = `$(polymake_cmd) --script $(pwd())/test_markov.pl $path`
-    println(cmd)
+    cmd = nothing
+
+    if contains(path, ".mat")
+        cmd = `$(polymake_cmd) --script $(pwd())/test_markov.pl $path polytope`
+    else
+        cmd = `$(polymake_cmd) --script $(pwd())/test_markov.pl $path`
+    end
+    
     proc = run(pipeline(cmd, stdin=in, stdout=out, stderr=err), wait=false)
 
     task = @async begin
@@ -104,42 +113,61 @@ function run_markov_polymake(path)
 end
 
 function benchmark(path)
-    #ideal_4ti2 = run_markov_4ti2(path)
-    #
-    #if is_groebner(ideal_4ti2)
-    #    println("4ti2 correct")
-    #else
-    #    println("4ti2 incorrect")
-    #end
+    ideal_4ti2 = run_markov_4ti2(path)
+    lattice_ideal = nothing
+    
+    if contains(path, ".mat")
+        mat = read_4ti2_matrix_file(path)
+        lattice = transpose(kernel(mat)[2])
+        lattice_ideal = binomial_exponents_to_ideal(lattice)
+    else
+        @timeit to "4ti2" lattice = read_4ti2_matrix_file(path)
+        lattice_ideal = binomial_exponents_to_ideal(lattice)
+    end
+    
+    if is_groebner(ideal_4ti2, lattice_ideal)
+        println("4ti2 correct")
+    else
+        println("4ti2 incorrect")
+    end
 
     ideal_polymake = run_markov_polymake(path)
-    if is_groebner(ideal_polymake)
+    
+    if is_groebner(ideal_polymake, lattice_ideal)
         println("polymake correct")
     else
         println("polymake incorrect")
     end
 end
 
-function is_groebner(I::MPolyIdeal)
+function is_groebner(I::MPolyIdeal, lattice_ideal::MPolyIdeal)
     R = base_ring(I)
-    o = deglex(R)
+    
+    for g in gens(lattice_ideal)
+        if 0 != normal_form(g, I;)
+            return false
+        end
+    end
+
     for (f, g) in Hecke.subsets(gens(I), 2)
         x_gamma = lcm(leading_monomial(f), leading_monomial(g))
         s_poly = divexact(x_gamma * f, leading_term(f)) -
             divexact(x_gamma * g, leading_term(g))
 
-        if 0 != normal_form(s_poly, I, o)
+        if 0 != normal_form(s_poly, I)
             return false
         end
     end
-
+    
     return true
 end
 
 function benchmark_folder(folder_path)
     foreach(readdir(folder_path)) do f
         if endswith(f, ".mat")
-            benchmark(replace(f, ".mat" => ""))
+            @timeit to "$f" begin
+                benchmark("$folder_path/$f")
+            end
         end
     end
 end

@@ -6,7 +6,7 @@ sub write_fano_4ti2_files {
   my $polyDB = polyDB();
   my $collection = $polyDB->get_collection("Polytopes.Lattice.SmoothReflexive");
 
-  for (my $i = 3; $i < 4; $i++) {
+  for (my $i = 2; $i < 3; $i++) {
     my $fano_polytopes = $collection->find({"DIM"=>$i});
     make_path($fano_folder."dimension_".$i);
 
@@ -19,8 +19,8 @@ sub write_fano_4ti2_files {
 
       my $num_ver = $polytope->N_VERTICES;
       my $ver_dim = $i + 1;
-      print $fh "$num_ver $ver_dim \n";
-      print $fh $polytope->VERTICES;
+      print $fh "$ver_dim $num_ver \n";
+      print $fh transpose($polytope->VERTICES);
       close($fh);
     }
   }
