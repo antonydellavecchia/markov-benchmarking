@@ -121,7 +121,7 @@ function benchmark(path)
         lattice = transpose(kernel(mat)[2])
         lattice_ideal = binomial_exponents_to_ideal(lattice)
     else
-        @timeit to "4ti2" lattice = read_4ti2_matrix_file(path)
+        lattice = read_4ti2_matrix_file(path)
         lattice_ideal = binomial_exponents_to_ideal(lattice)
     end
     
@@ -149,6 +149,10 @@ function is_groebner(I::MPolyIdeal, lattice_ideal::MPolyIdeal)
         end
     end
 
+    if length(gens(I)) < 2
+        return true
+    end
+        
     for (f, g) in Hecke.subsets(gens(I), 2)
         x_gamma = lcm(leading_monomial(f), leading_monomial(g))
         s_poly = divexact(x_gamma * f, leading_term(f)) -
