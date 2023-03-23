@@ -33,11 +33,10 @@ sub run_markov {
 
   } else {
     my $initial_time = time();
-    my $result = markov_basis($input_matrix);
+    my $result = markov_basis($input_matrix, {"use_kernel" => true});
     print time() - $initial_time;
     save($result, "${matrix_file}_polymake.json");
   }
 }
 
 run_markov();
-

@@ -1,5 +1,5 @@
 using Oscar: replace_TeX
-using Base: reduced_indices
+
 using Oscar
 using TimerOutputs
 
@@ -71,7 +71,7 @@ function run_markov_4ti2(path)
     return binomial_exponents_to_ideal(read_4ti2_matrix_file("$(path).mar"))
 end
 
-function run_markov_polymake(path)
+function run_markov_polymake(path, is_polytope = false)
     in = Pipe()
     out = Pipe()
     err = Pipe()
@@ -80,10 +80,10 @@ function run_markov_polymake(path)
     Base.link_pipe!(err, reader_supports_async=true)
     cmd = nothing
 
-    if contains(path, ".mat")
+    if (is_polytope)
         cmd = `$(polymake_cmd) --script $(pwd())/test_markov.pl $path polytope`
     else
-        cmd = `$(polymake_cmd) --script $(pwd())/test_markov.pl $path`
+        cmd = `$(polymake_cmd) --script $(pwd())/test_markov.pl $path use_kernel`
     end
     
     proc = run(pipeline(cmd, stdin=in, stdout=out, stderr=err), wait=false)
@@ -113,9 +113,8 @@ function run_markov_polymake(path)
 end
 
 function benchmark(path)
-    ideal_4ti2 = run_markov_4ti2(path)
+    @timeit to "4ti2" ideal_4ti2 = run_markov_4ti2(path)
     lattice_ideal = nothing
-    
     if contains(path, ".mat")
         mat = read_4ti2_matrix_file(path)
         lattice = transpose(kernel(mat)[2])
@@ -131,7 +130,7 @@ function benchmark(path)
         println("4ti2 incorrect")
     end
 
-    ideal_polymake = run_markov_polymake(path)
+    @timeit to "polymake" ideal_polymake = run_markov_polymake(path)
     
     if is_groebner(ideal_polymake, lattice_ideal)
         println("polymake correct")
@@ -144,6 +143,7 @@ function is_groebner(I::MPolyIdeal, lattice_ideal::MPolyIdeal)
     R = base_ring(I)
     
     for g in gens(lattice_ideal)
+        println(g, I)
         if 0 != normal_form(g, I;)
             return false
         end
